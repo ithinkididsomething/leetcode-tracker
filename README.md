@@ -205,10 +205,14 @@ npx eslint .         # lint
 npx vitest run       # unit tests
 ```
 
-Use `npm run typecheck` rather than a bare `npx tsc --noEmit`. `next-env.d.ts`
-declares the `LayoutProps` / `PageProps` globals and is gitignored, so on a fresh
-clone plain `tsc` reports those two as missing until a build has run once.
-`next typegen` regenerates them without a full build.
+Use `npm run typecheck` rather than a bare `npx tsc --noEmit`. It runs
+`prisma generate` and `next typegen` first, because two sets of types are
+gitignored and must exist before `tsc` can succeed on a fresh clone:
+
+- `src/generated/prisma` — without it, every Prisma query fails to type-check
+- `next-env.d.ts`, which declares the `LayoutProps` / `PageProps` globals
+
+A bare `tsc` reports both as missing until `db:setup` and a build have run.
 
 ## Stack
 

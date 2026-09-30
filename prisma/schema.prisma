@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+/// A team in the standings. Five are seeded as placeholders, but admins can add
+/// and remove teams from the UI. Names are always editable.
+model Team {
+  id        String   @id @default(cuid())
+  name      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  members Member[]
+}
+
+/// A tracked LeetCode profile. These are records an admin adds, not logins:
+/// members never authenticate, they are only scraped and displayed.
+model Member {
+  id               String    @id @default(cuid())
+  displayName      String
+  leetcodeUsername String    @unique
+  teamId           String
+  active           Boolean   @default(true)
+  lastSyncedAt     DateTime?
+  lastSyncError    String?
+  createdAt        DateTime  @default(now())
+
+  team        Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  submissions Submission[]
+
+  @@index([teamId])
+}
+
+/// Admin accounts. The app is admin-only: members are tracked profiles, not users.
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         String   @default("ADMIN")
+  createdAt    DateTime @default(now())
+
+  sessions Session[]
+}
+
+model Session {
+  token     String   @id
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Problem metadata. LeetCode's submission feed gives titles only, so difficulty
+/// and topic tags are joined in from the catalogue below.
+model Problem {
+  titleSlug         String  @id
+  title             String
+  questionNumber    String
+  difficulty        String
+  topics            String
+  acceptanceRatePct Float?
+
+  submissions Submission[]
+}
+
+/// `id` is the LeetCode submission id, which is globally unique across accounts.
+model Submission {
+  id         String   @id
+  memberId   String
+  titleSlug  String
+  solvedAt   DateTime
+  recordedAt DateTime @default(now())
+
+  member  Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  problem Problem @relation(fields: [titleSlug], references: [titleSlug], onDelete: Cascade)
+
+  @@index([memberId, solvedAt])
+}
+
+/// Install-wide configuration, editable from the admin settings page.
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}

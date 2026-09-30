@@ -200,10 +200,15 @@ npm run dev          # dev server
 npm run build        # production build
 npm run db:setup     # migrate + generate + seed
 npm run db:seed      # seed only (safe to re-run)
-npx tsc --noEmit     # typecheck
+npm run typecheck    # route types + tsc --noEmit
 npx eslint .         # lint
 npx vitest run       # unit tests
 ```
+
+Use `npm run typecheck` rather than a bare `npx tsc --noEmit`. `next-env.d.ts`
+declares the `LayoutProps` / `PageProps` globals and is gitignored, so on a fresh
+clone plain `tsc` reports those two as missing until a build has run once.
+`next typegen` regenerates them without a full build.
 
 ## Stack
 

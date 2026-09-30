@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
 import { fetchProfileTotals } from "@/lib/leetcode";
 import { setSetting, type SettingKey } from "@/lib/settings";
-import { syncAllMembers } from "@/lib/sync";
+import { syncAllMembers, MANUAL_SUBMISSION_PREFIX } from "@/lib/sync";
 
 export type FormState = { ok: boolean; message: string };
 
@@ -408,4 +408,142 @@ export async function changePasswordAction(
   });
 
   return { ok: true, message: "Password updated." };
+}
+
+/**
+ * Records a solve that LeetCode never reported, for example one that fell past
+ * the 20-row window between syncs, or a paper exercise done outside LeetCode.
+ *
+ * LeetCode only exposes each member's newest 20 accepted submissions, so a
+ * missed solve is otherwise invisible forever. This is the manual override.
+ */
+export async function addManualSolveAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  await requireAdmin();
+
+  const memberId = String(formData.get("memberId") ?? "");
+  const query = String(formData.get("problem") ?? "").trim();
+  const solvedOn = String(formData.get("solvedOn") ?? "").trim();
+
+  const member = await prisma.member.findUnique({
+    where: { id: memberId },
+    select: { id: true, displayName: true },
+  });
+  if (!member) return fail("That member no longer exists.");
+
+  if (!query) return fail("Enter a LeetCode question number or problem slug.");
+  if (!solvedOn) return fail("Choose the date it was solved.");
+
+  // YYYY-MM-DD from <input type="date">. Parsed as local noon so a daylight
+  // saving shift can never move the solve onto the neighbouring day, since
+  // stats bucket by local calendar date.
+  const parsed = /^(\d{4})-(\d{2})-(\d{2})$/.exec(solvedOn);
+  if (!parsed) return fail("That date could not be read.");
+  const solvedAt = new Date(
+    Number(parsed[1]),
+    Number(parsed[2]) - 1,
+    Number(parsed[3]),
+    12,
+  );
+  if (Number.isNaN(solvedAt.getTime())) return fail("That date is not valid.");
+  if (solvedAt.getTime() > Date.now()) {
+    return fail("That date is in the future.");
+  }
+
+  // Accept a question number ("146"), a slug ("lru-cache") or a title with its
+  // number ("146. LRU Cache"), which is what people paste from the site.
+  const cleaned = query.replace(/^\d+[.)]\s*/, "").trim();
+  const asNumber = /^\d+$/.test(query.trim())
+    ? query.trim().replace(/^0+/, "")
+    : /^\d+[.)]/.test(query.trim())
+      ? query.trim().match(/^\d+/)?.[0].replace(/^0+/, "")
+      : null;
+
+  const problem = await prisma.problem.findFirst({
+    where: {
+      titleSlug: { not: "__catalogue_refreshed_at__" },
+      OR: [
+        ...(asNumber ? [{ questionNumber: asNumber }] : []),
+        { titleSlug: cleaned.toLowerCase().replace(/\s+/g, "-") },
+        { title: { equals: cleaned } },
+      ],
+    },
+    select: { titleSlug: true, title: true, questionNumber: true },
+  });
+
+  if (!problem) {
+    return fail(
+      `"${query}" is not in the problem catalogue. Sync to refresh it, or use the exact question number.`,
+    );
+  }
+
+  // Catch a double submission before it lands, since the same problem solved
+  // twice on one day is a typo rather than two distinct solves.
+  const startOfDay = new Date(solvedAt);
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(solvedAt);
+  endOfDay.setHours(23, 59, 59, 999);
+
+  const sameDay = await prisma.submission.findFirst({
+    where: {
+      memberId: member.id,
+      titleSlug: problem.titleSlug,
+      solvedAt: { gte: startOfDay, lte: endOfDay },
+    },
+    select: { id: true },
+  });
+  if (sameDay) {
+    return fail(`${problem.title} is already recorded for that day.`);
+  }
+
+  await prisma.submission.create({
+    data: {
+      // No LeetCode submission id exists, so mint a clearly-marked one that
+      // can never collide with the numeric ids the API returns.
+      id: `${MANUAL_SUBMISSION_PREFIX}${crypto.randomUUID()}`,
+      memberId: member.id,
+      titleSlug: problem.titleSlug,
+      solvedAt,
+    },
+  });
+
+  revalidatePath("/");
+  revalidatePath(`/member/${member.id}`);
+  revalidatePath("/admin/members");
+  return {
+    ok: true,
+    message: `Added "${problem.title}" for ${member.displayName}.`,
+  };
+}
+
+export async function deleteManualSolveAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  await requireAdmin();
+
+  const id = String(formData.get("submissionId") ?? "");
+
+  // Read the owner first: the row is gone by the time we would look again, and
+  // the member path needs revalidating too.
+  const existing = await prisma.submission.findUnique({
+    where: { id },
+    select: { memberId: true },
+  });
+  if (!existing) return fail("That entry no longer exists.");
+
+  // Scoped to the prefix so a real synced row can never be removed from here.
+  const deleted = await prisma.submission.deleteMany({
+    where: { id: { startsWith: MANUAL_SUBMISSION_PREFIX, equals: id } },
+  });
+  if (deleted.count === 0) {
+    return fail("That entry is a synced solve and cannot be deleted here.");
+  }
+
+  revalidatePath("/");
+  revalidatePath(`/member/${existing.memberId}`);
+  revalidatePath("/admin/members");
+  return { ok: true, message: "Removed the manual entry." };
 }

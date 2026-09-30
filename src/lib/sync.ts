@@ -10,6 +10,15 @@ import {
   type ProfileTotals,
 } from "./leetcode";
 import { getSettings, markCronRun } from "./settings";
+import { supersededManualIds } from "./stats";
+
+/**
+ * Ids for solves an admin typed in by hand, which have no LeetCode submission
+ * id. The prefix is how sync recognises them, so a real submission arriving
+ * later for the same problem on the same day can replace the manual row instead
+ * of double counting.
+ */
+export const MANUAL_SUBMISSION_PREFIX = "manual:";
 
 /** Rebuild the problem catalogue at most once a week; it is ~4070 rows. */
 const PROBLEMSET_TTL_MS = 7 * 86_400_000;
@@ -213,6 +222,22 @@ export async function syncMember(memberId: string): Promise<MemberSyncResult> {
       fresh.map((s) => s.titleSlug),
       fresh.map((s) => s.title),
     );
+
+    // An admin may have already typed this solve in by hand, guessing at the
+    // date. Now that LeetCode has handed us the real one, drop the manual row so
+    // the same problem is not counted twice.
+    const manual = await prisma.submission.findMany({
+      where: {
+        memberId: member.id,
+        id: { startsWith: MANUAL_SUBMISSION_PREFIX },
+        titleSlug: { in: [...new Set(fresh.map((s) => s.titleSlug))] },
+      },
+      select: { id: true, titleSlug: true, solvedAt: true },
+    });
+    const superseded = supersededManualIds(manual, fresh);
+    if (superseded.length > 0) {
+      await prisma.submission.deleteMany({ where: { id: { in: superseded } } });
+    }
 
     // A concurrent sync can insert these ids between our existence check and
     // this write. P2002 means someone else won the race, and the end state is

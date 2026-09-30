@@ -33,6 +33,31 @@ export function startOfWeek(d: Date): Date {
   return day;
 }
 
+/**
+ * Works out which manually entered solves a fresh sync makes redundant.
+ *
+ * A manual row stands in for a solve LeetCode has now reported for real. It is
+ * only redundant when both refer to the same problem on the same local day: a
+ * genuine re-solve on a different day is a separate solve and must survive.
+ *
+ * Pure, so it lives here rather than in sync.ts, which cannot be imported from
+ * a test because of its server-only dependency.
+ */
+export function supersededManualIds(
+  manual: { id: string; titleSlug: string; solvedAt: Date }[],
+  fresh: { titleSlug: string; at: Date }[],
+): string[] {
+  const realDays = new Map<string, Set<string>>();
+  for (const s of fresh) {
+    const days = realDays.get(s.titleSlug) ?? new Set<string>();
+    days.add(dayKey(s.at));
+    realDays.set(s.titleSlug, days);
+  }
+  return manual
+    .filter((m) => realDays.get(m.titleSlug)?.has(dayKey(m.solvedAt)))
+    .map((m) => m.id);
+}
+
 export function addDays(d: Date, n: number): Date {
   const next = new Date(d);
   next.setDate(next.getDate() + n);

@@ -128,11 +128,25 @@ ephemeral filesystem, the database will disappear between invocations.
    submissions.
 3. Insert the ones not already stored. Re-solving a problem yields several
    submission rows, so ids are what get de-duplicated, not slugs.
-4. Repair any problem still marked `UNKNOWN` via a direct per-slug lookup. This
+4. Drop any manual entry that LeetCode has now confirmed, so recording a solve
+   by hand never ends up counting twice.
+5. Repair any problem still marked `UNKNOWN` via a direct per-slug lookup. This
    catches problems released since the last catalogue refresh.
-5. Record the sync time, or the failure message, on the member row.
+6. Record the sync time, or the failure message, on the member row.
 
 Sync is idempotent: running it twice in a row reports `imported: 0`.
+
+### Recording a solve by hand
+
+Because the API only ever returns the newest 20 submissions, a solve can slip
+out of the window between syncs and be lost permanently. An admin can add these
+from the member page by question number (`146`), slug (`lru-cache`) or title.
+
+A manual row has no LeetCode submission id, so it is stored with a
+`manual:` prefix instead. Those rows are badged `Manual` in the table and can be
+removed by hand, and a later sync that finds the real submission for the same
+problem on the same day deletes the manual row automatically. A genuine re-solve
+on a different day is left alone.
 
 Profiles are synced **sequentially with a configurable pause**, ordered
 least-recently-synced first. The pause matters more than it looks — firing 50
@@ -152,6 +166,7 @@ starving.
 | Consistency heatmap | 26-week GitHub-style grid |
 | Topic tags | Ranked list over all tracked solves |
 | Question titles | Recent-problems table, linked to LeetCode |
+| Manual solves | Member page, add a solve LeetCode never reported |
 | Member management | `/admin/members`, add/edit/team-assign/deactivate/delete |
 | Team names | `/admin/teams`, rename, or add/remove teams with `+` |
 | Admin accounts | `/admin/admins`, add other admins, change your own password |

@@ -3,6 +3,11 @@ import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import {
+  addManualSolveAction,
+  deleteManualSolveAction,
+} from "@/app/admin/actions";
+import { ActionForm } from "@/components/ActionForm";
+import {
   buildHeatmap,
   computeStreak,
   difficultyBreakdown,
@@ -12,6 +17,7 @@ import {
 } from "@/lib/stats";
 import { DifficultyChart, WeeklyChart } from "@/components/Charts";
 import { Heatmap } from "@/components/Heatmap";
+import { MANUAL_SUBMISSION_PREFIX } from "@/lib/sync";
 
 export const dynamic = "force-dynamic";
 
@@ -136,6 +142,8 @@ export default async function MemberPage({
             </Card>
           </div>
 
+          <ManualSolveForm memberId={member.id} />
+
           <Card title="Recent problems" className="mt-3">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -145,6 +153,7 @@ export default async function MemberPage({
                     <th className="py-2 pr-3 font-medium">Problem</th>
                     <th className="py-2 pr-3 font-medium">Difficulty</th>
                     <th className="py-2 font-medium">Solved</th>
+                    <th className="py-2" />
                   </tr>
                 </thead>
                 <tbody>
@@ -181,7 +190,31 @@ export default async function MemberPage({
                         </span>
                       </td>
                       <td className="py-2 text-xs whitespace-nowrap text-ink-500">
-                        {s.solvedAt.toLocaleDateString()}
+                        <span className="inline-flex items-center gap-2">
+                          {s.solvedAt.toLocaleDateString()}
+                          {s.id.startsWith(MANUAL_SUBMISSION_PREFIX) && (
+                            <span className="rounded-full bg-ink-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-ink-600 uppercase ring-1 ring-ink-200">
+                              Manual
+                            </span>
+                          )}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-1 text-right">
+                        {s.id.startsWith(MANUAL_SUBMISSION_PREFIX) && (
+                          <ActionForm
+                            action={deleteManualSolveAction}
+                            submitLabel="Remove"
+                            pendingLabel="Removing..."
+                          >
+                            <input type="hidden" name="submissionId" value={s.id} />
+                            <button
+                              type="submit"
+                              className="text-xs font-medium text-red-600 underline decoration-red-300 underline-offset-2 hover:text-red-700"
+                            >
+                              Remove
+                            </button>
+                          </ActionForm>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -192,6 +225,69 @@ export default async function MemberPage({
         </>
       )}
     </main>
+  );
+}
+
+/**
+ * Lets an admin record a solve LeetCode never reported. It counts towards every
+ * chart immediately, and is labelled Manual in the table so it is obvious which
+ * rows did not come from the API.
+ */
+function ManualSolveForm({ memberId }: { memberId: string }) {
+  const today = new Date();
+  const todayValue = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+  return (
+    <section className="card mt-3 border-dashed border-brand-200 bg-brand-50/50 p-4">
+      <h2 className="text-sm font-semibold text-ink-900">Record a missed solve</h2>
+      <p className="mt-0.5 text-xs text-ink-500">
+        LeetCode only ever shows the newest 20 accepted submissions, so anything
+        that slips past between syncs is lost. Add it here by question number,
+        and it will be dropped automatically if a later sync reports the real one.
+      </p>
+      <ActionForm
+        action={addManualSolveAction}
+        submitLabel="Add solve"
+        pendingLabel="Adding..."
+        className="mt-3"
+      >
+        <input type="hidden" name="memberId" value={memberId} />
+        <div className="grid gap-3 sm:grid-cols-[2fr_1fr_auto] sm:items-end">
+          <div>
+            <label htmlFor="manual-problem" className="mb-1 block text-xs font-medium text-ink-600">
+              Question number or problem
+            </label>
+            <input
+              id="manual-problem"
+              name="problem"
+              required
+              maxLength={120}
+              placeholder="e.g. 146 or lru-cache"
+              className="w-full field"
+            />
+          </div>
+          <div>
+            <label htmlFor="manual-date" className="mb-1 block text-xs font-medium text-ink-600">
+              Solved on
+            </label>
+            <input
+              id="manual-date"
+              name="solvedOn"
+              type="date"
+              required
+              max={todayValue}
+              defaultValue={todayValue}
+              className="w-full field"
+            />
+          </div>
+          <div className="pb-0.5">
+            <button type="submit" className="btn btn-primary w-full">
+              Add solve
+            </button>
+          </div>
+        </div>
+      </ActionForm>
+    </section>
   );
 }
 

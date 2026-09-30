@@ -27,7 +27,7 @@ Key variables (full detail and comments in `.env.example`):
 Then:
 
 ```bash
-npm run db:setup   # migrate + generate client + seed 5 teams and the admin
+npm run db:setup   # migrate + generate client + seed the admin and a few starter teams
 npm run dev
 ```
 
@@ -166,7 +166,7 @@ starving.
 | Consistency heatmap | 26-week GitHub-style grid |
 | Topic tags | Ranked list over all tracked solves |
 | Question titles | Recent-problems table, linked to LeetCode |
-| Manual solves | Member page, add a solve LeetCode never reported |
+| Manual solves | Member page, add a solve LeetCode never reported (see *Recording a solve by hand*) |
 | Member management | `/admin/members`, add/edit/team-assign/deactivate/delete |
 | Team names | `/admin/teams`, rename, or add/remove teams with `+` |
 | Admin accounts | `/admin/admins`, add other admins, change your own password |
@@ -193,13 +193,14 @@ starving.
 
 ```
 prisma/schema.prisma        Team, Member, User, Session, Problem, Submission, Setting
-prisma/seed.ts              5 starting teams + the admin from .env
+prisma/seed.ts              Starter teams + the admin from .env (teams are editable at runtime)
 prisma.config.ts            Anchors the SQLite path for the Prisma CLI
 src/lib/leetcode.ts         GraphQL client, documents the API constraints
 src/lib/sync.ts             Incremental import, rotation, metadata repair
 src/lib/settings.ts         Install-wide settings, throttle, cron secret check
 src/lib/stats.ts            Streak / weekly / difficulty / topic / heatmap maths
 src/lib/stats.test.ts       20 unit tests for the above
+src/lib/sync.test.ts        Manual-vs-real solve reconciliation tests
 src/lib/leaderboard.ts      Team standings aggregation
 src/lib/auth.ts             bcrypt + DB-backed sessions, requireAdmin
 src/app/admin/actions.ts    Every write, each behind requireAdmin

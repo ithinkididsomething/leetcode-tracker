@@ -189,6 +189,40 @@ starving.
 - Recently released LeetCode problems sometimes have no topic tags yet. They
   show as blank rather than being dropped.
 
+## Dependencies
+
+Anyone cloning this installs all of it themselves with `npm install`. Nothing
+library-related is committed: `node_modules/` and `package-lock.json` are
+handled by npm, and `.gitignore` keeps the actual folder out of the repo. So
+there is no list of "vendored" libraries to keep updated by hand — adding or
+removing one is a `package.json` change and a commit.
+
+| Package | Why it is here |
+| --- | --- |
+| `next`, `react`, `react-dom` | Framework. `react-dom` has no direct import anywhere and still must stay: it is a required peer of `next` and `recharts`. |
+| `@prisma/client` | Types and runtime for the generated client. Never imported by hand, but `src/generated/prisma/` resolves it in a dozen places. |
+| `@prisma/adapter-better-sqlite3` | Lets Prisma 7 talk to SQLite. `src/lib/db.ts`, `prisma/seed.ts`. |
+| `prisma` | CLI, used only by the `db:*` scripts. Stays in `dependencies` on purpose: `db:setup` runs `prisma migrate deploy` on the deployed host. |
+| `bcryptjs` | Password hashing, `src/lib/auth.ts`. v3 ships its own TypeScript types, so no `@types/bcryptjs` is needed. |
+| `dotenv` | Reads `.env` for the Prisma CLI and seed script only. Next.js loads `.env` itself, so nothing under `src/` uses it. |
+| `recharts` | Weekly bar and difficulty donut charts. |
+| `typescript`, `@types/node`, `@types/react` | Build-time only. |
+| `tailwindcss`, `@tailwindcss/postcss` | Styling; the PostCSS plugin is referenced from `postcss.config.mjs`. |
+| `eslint`, `eslint-config-next` | Linting, configured in `eslint.config.mjs`. |
+| `tsx` | Runs `prisma/seed.ts` directly, no separate compile step. |
+| `vitest` | Unit tests. There is no `test` script; run `npx vitest run`. |
+
+Deliberately **not** listed as dependencies, because they are not useful here:
+
+- `@types/bcryptjs` — removed. `bcryptjs` v3 bundles its own types, and the
+  published stub described the old 2.x API, so it was both dead and a hazard.
+- `@types/react-dom` — removed. The App Router never touches `ReactDOM` types,
+  and it is only an optional peer of `recharts` and Radix.
+
+Before removing anything else from this list, check for a **peer** requirement
+as well as an import. `react-dom` above is the case that catches people out:
+nothing imports it, and the app breaks without it.
+
 ## Project layout
 
 ```
